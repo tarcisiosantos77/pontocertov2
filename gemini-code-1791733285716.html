@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro de Ponto Inteligente</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f3f4f6; margin: 0; padding: 16px; color: #1f2937; }
+    .container { max-width: 500px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; text-align: center; margin-bottom: 16px; color: #111827; }
+    .card { background: #ffffff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    
+    .btn-camera {
+      display: block; width: 100%; text-align: center; padding: 14px;
+      background: #2563eb; color: #ffffff; border: none; border-radius: 8px;
+      font-size: 1rem; font-weight: 600; cursor: pointer;
+    }
+    input[type="file"] { display: none; }
+    
+    #preview { max-width: 100%; height: auto; max-height: 200px; border-radius: 8px; display: none; margin: 12px auto 0; object-fit: contain; }
+    #status { text-align: center; font-size: 0.85rem; color: #4b5563; margin-top: 8px; font-weight: 500; }
+    
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-top: 10px; margin-bottom: 4px; color: #374151; }
+    input, select, textarea {
+      width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem;
+    }
+    
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .tag {
+      background: #e5e7eb; border: none; padding: 6px 10px; border-radius: 16px;
+      font-size: 0.8rem; cursor: pointer;
+    }
+    .tag:hover { background: #d1d5db; }
+    
+    .btn-save {
+      width: 100%; padding: 12px; background: #059669; color: white; border: none;
+      border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 14px;
+    }
+
+    /* Ações de backup e exportação */
+    .backup-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+    .btn-backup {
+      flex: 1; padding: 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #d1d5db;
+      background: #f9fafb; cursor: pointer; font-weight: 500;
+    }
+
+    /* Agrupamento por dia e cálculo */
+    .dia-card { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+    .dia-header {
+      background: #f8fafc; padding: 10px 12px; display: flex; justify-content: space-between;
+      align-items: center; border-bottom: 1px solid #e5e7eb;
+    }
+    .dia-total { font-weight: 700; color: #047857; font-size: 0.9rem; }
+    .dia-lista { padding: 8px 12px; }
+    
+    .registro-item {
+      display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed #f3f4f6; align-items: center;
+    }
+    .registro-item:last-child { border-bottom: none; }
+    .registro-img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: #e5e7eb; }
+    .registro-info { flex: 1; font-size: 0.85rem; }
+    .badge {
+      display: inline-block; padding: 2px 6px; border-radius: 4px;
+      font-size: 0.7rem; font-weight: bold; background: #dbeafe; color: #1e40af;
+    }
+    .obs-text { font-size: 0.75rem; color: #92400e; background: #fef3c7; padding: 3px 6px; border-radius: 4px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Controle de Ponto</h1>
+
+    <!-- Card de Captura -->
+    <div class="card">
+      <label for="cameraInput" class="btn-camera">📸 Tirar Foto do Comprovante</label>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" />
+      
+      <img id="preview" alt="Prévia do comprovante" />
+      <div id="status"></div>
+
+      <!-- Formulário de Confirmação -->
+      <div id="formSection" style="display: none; margin-top: 14px;">
+        <label>Tipo de Registro:</label>
+        <select id="tipoPonto">
+          <option value="Entrada">Entrada</option>
+          <option value="Saída Intervalo">Saída Intervalo</option>
+          <option value="Retorno Intervalo">Retorno Intervalo</option>
+          <option value="Saída">Saída</option>
+        </select>
+
+        <label>Data:</label>
+        <input type="date" id="dataPonto" />
+
+        <label>Horário:</label>
+        <input type="time" id="horaPonto" />
+
+        <label>Observação / Justificativa (Opcional):</label>
+        <div class="tags">
+          <button type="button" class="tag" onclick="adicionarTag('Consulta médica')">🩺 Médico</button>
+          <button type="button" class="tag" onclick="adicionarTag('Serviço externo')">🚗 Externo</button>
+          <button type="button" class="tag" onclick="adicionarTag('Saída autorizada')">✅ Autorizado</button>
+        </div>
+        <textarea id="observacao" rows="2" placeholder="Ex.: Saída antecipada para consulta..."></textarea>
+
+        <button class="btn-save" onclick="salvarRegistro()">Salvar Ponto</button>
+      </div>
+    </div>
+
+    <!-- Histórico & Cálculos -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h2 style="font-size: 1.1rem; margin: 0;">Histórico por Dia</h2>
+        <button onclick="limparHistorico()" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.75rem;">Limpar Tudo</button>
+      </div>
+
+      <!-- Ações de Dados Internos -->
+      <div class="backup-actions">
+        <button class="btn-backup" onclick="exportarCSV()">📥 Exportar CSV (Excel)</button>
+        <button class="btn-backup" onclick="exportarJSON()">💾 Backup Arquivo</button>
+      </div>
+
+      <div id="historicoLista">Nenhum registro ainda.</div>
+    </div>
+  </div>
+
+  <script>
+    let imagemBase64 = '';
+
+    // Leitura da câmera e OCR
+    document.getElementById('cameraInput').addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const preview = document.getElementById('preview');
+      const status = document.getElementById('status');
+      const formSection = document.getElementById('formSection');
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        imagemBase64 = event.target.result;
+        preview.src = imagemBase64;
+        preview.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+
+      status.innerText = "Lendo texto do comprovante...";
+      formSection.style.display = 'none';
+
+      try {
+        const { data: { text } } = await Tesseract.recognize(file, 'por');
+        status.innerText = "Concluído! Confira os dados antes de salvar.";
+        formSection.style.display = 'block';
+
+        const matchData = text.match(/(\d{2})[\/\.-](\d{2})[\/\.-](\d{2,4})/);
+        if (matchData) {
+          let ano = matchData[3].length === 2 ? '20' + matchData[3] : matchData[3];
+          document.getElementById('dataPonto').value = `${ano}-${matchData[2]}-${matchData[1]}`;
+        } else {
+          document.getElementById('dataPonto').value = new Date().toISOString().split('T')[0];
+        }
+
+        const matchHora = text.match(/(\d{2})[:hH](\d{2})/);
+        if (matchHora) {
+          document.getElementById('horaPonto').value = `${matchHora[1]}:${matchHora[2]}`;
+        } else {
+          const now = new Date();
+          document.getElementById('horaPonto').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        }
+
+      } catch (err) {
+        status.innerText = "Falha ao ler automaticamente. Ajuste manualmente os dados.";
+        formSection.style.display = 'block';
+        document.getElementById('dataPonto').value = new Date().toISOString().split('T')[0];
+      }
+    });
+
+    function adicionarTag(texto) {
+      const campo = document.getElementById('observacao');
+      campo.value = campo.value ? `${campo.value} | ${texto}` : texto;
+    }
+
+    // Salvar internamente
+    function salvarRegistro() {
+      const ponto = {
+        id: Date.now(),
+        tipo: document.getElementById('tipoPonto').value,
+        data: document.getElementById('dataPonto').value,
+        hora: document.getElementById('horaPonto').value,
+        observacao: document.getElementById('observacao').value,
+        foto: imagemBase64
+      };
+
+      const registros = JSON.parse(localStorage.getItem('pontos_salvos') || '[]');
+      registros.push(ponto);
+      localStorage.setItem('pontos_salvos', JSON.stringify(registros));
+
+      // Reset
+      document.getElementById('formSection').style.display = 'none';
+      document.getElementById('preview').style.display = 'none';
+      document.getElementById('status').innerText = 'Ponto salvo com sucesso!';
+      document.getElementById('observacao').value = '';
+      document.getElementById('cameraInput').value = '';
+      imagemBase64 = '';
+
+      renderizarHistorico();
+    }
+
+    // Conversão de "HH:MM" para minutos
+    function horaParaMinutos(horaStr) {
+      const [h, m] = horaStr.split(':').map(Number);
+      return (h * 60) + m;
+    }
+
+    // Conversão de minutos para "Xh Ymin"
+    function minutosPara
